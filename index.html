@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050505" />
+    <meta
+      name="description"
+      content="Showcase — a single-page introduction to Behance. Creative work, up close."
+    />
+    <title>Showcase — Behance</title>
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        height: 100%;
+        background: #000;
+      }
+      #intro-hold {
+        position: fixed;
+        inset: 0;
+        z-index: 2147482999;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="intro-hold" aria-hidden="true"></div>
+    <div id="root"></div>
+    <script>
+      window.setTimeout(function () {
+        var hold = document.getElementById('intro-hold')
+        if (hold) hold.remove()
+      }, 20000)
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
