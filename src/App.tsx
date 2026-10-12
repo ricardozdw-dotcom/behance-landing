@@ -83,22 +83,27 @@ export default function App() {
     setReturning(true)
     setSettled(false)
     const reduced = prefersReducedMotion()
-    hero.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
-    let closed = false
-    const onEnd = () => {
-      if (closed || scroller.scrollTop > 12) return
-      closed = true
-      scroller.removeEventListener('scrollend', onEnd)
+    const start = scroller.scrollTop
+    const end = hero.offsetTop
+    if (reduced || Math.abs(end - start) < 2) {
+      scroller.scrollTop = end
+      finishReturn()
+      return
+    }
+    scroller.classList.add('is-direct')
+    const t0 = performance.now()
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - t0) / 780)
+      const eased = 1 - (1 - progress) ** 3
+      scroller.scrollTop = start + (end - start) * eased
+      if (progress < 1) {
+        window.requestAnimationFrame(tick)
+        return
+      }
+      scroller.scrollTop = end
       finishReturn()
     }
-    scroller.addEventListener('scrollend', onEnd)
-    returnTimer.current = window.setTimeout(() => {
-      if (closed) return
-      closed = true
-      scroller.removeEventListener('scrollend', onEnd)
-      if (scroller.scrollTop > 12) scroller.scrollTop = 0
-      finishReturn()
-    }, reduced ? 48 : 1400)
+    window.requestAnimationFrame(tick)
   }
 
   const go = (next: Screen) => {
