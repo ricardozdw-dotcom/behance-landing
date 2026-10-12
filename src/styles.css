@@ -268,6 +268,21 @@ html.has-cursor * {
 .deck-view {
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+}
+
+.deck-view::-webkit-scrollbar {
+  display: none;
+}
+
+.deck-view.is-direct {
+  scroll-snap-type: none;
 }
 
 .deck.is-punch {
@@ -287,8 +302,10 @@ html.has-cursor * {
 }
 
 .hero {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 0 0 100%;
+  height: 100%;
+  min-height: 100%;
   overflow: hidden;
   background: var(--bg);
   user-select: none;
@@ -296,8 +313,8 @@ html.has-cursor * {
   z-index: 1;
   perspective: 1500px;
   perspective-origin: 50% 46%;
-  transform: translate3d(0, 0, 0);
-  transition: transform 1.05s cubic-bezier(0.77, 0, 0.18, 1);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .hero-tilt {
@@ -485,74 +502,18 @@ html.has-cursor * {
   background: rgba(0, 87, 255, 0.85);
 }
 
-.deck.is-projects .hero {
-  transform: translate3d(0, -100%, 0);
-}
-
 .projects {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 0 0 100%;
+  height: 100%;
+  min-height: 100%;
   z-index: 2;
   background: #070707;
   color: var(--ink);
   user-select: none;
-  transform: translate3d(0, 100%, 0);
-  transition: transform 1.05s cubic-bezier(0.77, 0, 0.18, 1);
-}
-
-.deck.is-projects .projects {
-  transform: translate3d(0, 0, 0);
-}
-
-.deck.is-return {
-  transform-origin: 50% 42%;
-  animation: deck-return 1.65s cubic-bezier(0.2, 0.05, 0.55, 0.85) both;
-}
-
-.deck.is-return .hero,
-.deck.is-return .projects {
-  transition: none;
-}
-
-.deck.is-return .hero {
-  animation: return-hero 1.65s cubic-bezier(0.2, 0.05, 0.55, 0.85) both;
-}
-
-.deck.is-return .projects {
-  transform-origin: 50% 0%;
-  animation: return-projects 1.65s cubic-bezier(0.2, 0.05, 0.55, 0.85) both;
-}
-
-@keyframes deck-return {
-  0% {
-    transform: scale(1);
-  }
-  46% {
-    transform: scale(0.986);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-@keyframes return-hero {
-  0% {
-    transform: translate3d(0, -100%, 0);
-  }
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes return-projects {
-  0% {
-    transform: translate3d(0, 0, 0);
-    opacity: 1;
-  }
-  100% {
-    transform: translate3d(0, 100%, 0);
-    opacity: 1;
-  }
+  transform: translateZ(0);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .deck-veil {
@@ -1759,10 +1720,12 @@ html.has-cursor * {
   .deck.is-punch,
   .deck.is-punch .projects-stage,
   .deck.is-punch .deck-veil,
-  .deck.is-punch .fall-card.is-in,
-  .deck.is-return,
-  .deck.is-return .hero,
-  .deck.is-return .projects {
+  .deck.is-punch .fall-card.is-in {
     animation: none;
+  }
+
+  .deck-view {
+    scroll-behavior: auto;
+    scroll-snap-type: none;
   }
 }

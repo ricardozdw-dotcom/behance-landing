@@ -97,8 +97,6 @@ export function Projects({
     resizeWake()
     let acc = 0
     let lastWheel = 0
-    let lift = 0
-    let liftTarget = 0
     let raf = 0
     let running = true
 
@@ -118,19 +116,13 @@ export function Projects({
       const state = scroll.current
       if (delta < 0 && state.target <= 0.5 && state.current < 14) {
         acc += delta
-        // Yield a few pixels before the return commits, so the handoff is not a hard gate.
-        liftTarget = reduced ? 0 : Math.min(32, -acc * 0.18)
-        if (acc < -170) {
+        if (acc < -110) {
           acc = 0
-          liftTarget = 0
           onBackRef.current()
         }
         return
       }
-      if (delta > 0) {
-        acc = 0
-        liftTarget = 0
-      }
+      if (delta > 0) acc = 0
       state.target = Math.min(maxScroll(), Math.max(0, state.target + delta))
     }
 
@@ -198,10 +190,7 @@ export function Projects({
       if (Math.abs(state.target - state.current) < 0.2) state.current = state.target
       state.velocity = state.current - prev
       sheet.style.transform = `translate3d(0, ${-state.current}px, 0)`
-      if (performance.now() - lastWheel > 300) liftTarget = 0
-      lift += (liftTarget - lift) * (reduced ? 1 : liftTarget === 0 ? 0.14 : 0.2)
-      if (Math.abs(lift) < 0.15) lift = 0
-      stage.style.transform = lift ? `translate3d(0, ${lift.toFixed(2)}px, 0)` : 'none'
+      stage.style.transform = 'none'
 
       const cards = sheet.querySelectorAll<HTMLElement>('.fall-card')
       const height = Math.max(1, viewport.clientHeight)
@@ -349,7 +338,7 @@ export function Projects({
   }, [active, safePage])
 
   return (
-    <section ref={sectionRef} className="projects" aria-label="Featured projects" aria-hidden={!active}>
+    <section id="featured" ref={sectionRef} className="projects" aria-label="Featured projects" aria-hidden={!active}>
       <svg className="projects-filters" aria-hidden="true">
         <filter id="project-wake" x="0%" y="0%" width="100%" height="100%" colorInterpolationFilters="sRGB">
           <feImage ref={mapRef} result="map" preserveAspectRatio="none" width="100%" height="100%" />

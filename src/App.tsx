@@ -11,6 +11,28 @@ import { prefersReducedMotion } from './lib/math'
 
 type Screen = 'hero' | 'projects'
 
+function anchorEase(progress: number) {
+  const x1 = 0.77
+  const y1 = 0
+  const x2 = 0.18
+  const y2 = 1
+  const cx = 3 * x1
+  const bx = 3 * (x2 - x1) - cx
+  const ax = 1 - cx - bx
+  const cy = 3 * y1
+  const by = 3 * (y2 - y1) - cy
+  const ay = 1 - cy - by
+  const sampleX = (t: number) => ((ax * t + bx) * t + cx) * t
+  const sampleY = (t: number) => ((ay * t + by) * t + cy) * t
+  let t = progress
+  for (let i = 0; i < 8; i += 1) {
+    const slope = (3 * ax * t + 2 * bx) * t + cx
+    if (Math.abs(slope) < 1e-4) break
+    t = Math.min(1, Math.max(0, t - (sampleX(t) - progress) / slope))
+  }
+  return sampleY(t)
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('hero')
   const [settled, setSettled] = useState(true)
@@ -28,6 +50,7 @@ export default function App() {
   const closeTimer = useRef(0)
   const punchTimer = useRef(0)
   const returnTimer = useRef(0)
+  const scrollerRef = useRef<HTMLDivElement>(null)
   const heroReady = useRef<Promise<void> | null>(null)
   const resolveHeroReady = useRef<(() => void) | null>(null)
   const siteRef = useRef<HTMLDivElement>(null)
@@ -41,30 +64,91 @@ export default function App() {
     })
   }
 
+  const finishReturn = () => {
+    const scroller = scrollerRef.current
+    window.clearTimeout(returnTimer.current)
+    scroller?.classList.remove('is-direct')
+    lockRef.current = false
+    setReturning(false)
+    setScreen('hero')
+    setSettled(true)
+  }
+
+  const goToHero = () => {
+    if (introLockedRef.current || lockRef.current || openRef.current) return
+    const scroller = scrollerRef.current
+    const hero = document.getElementById('hero')
+    if (!scroller || !hero) return
+    lockRef.current = true
+    setReturning(true)
+    setSettled(false)
+    const reduced = prefersReducedMotion()
+    hero.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+    let closed = false
+    const onEnd = () => {
+      if (closed || scroller.scrollTop > 12) return
+      closed = true
+      scroller.removeEventListener('scrollend', onEnd)
+      finishReturn()
+    }
+    scroller.addEventListener('scrollend', onEnd)
+    returnTimer.current = window.setTimeout(() => {
+      if (closed) return
+      closed = true
+      scroller.removeEventListener('scrollend', onEnd)
+      if (scroller.scrollTop > 12) scroller.scrollTop = 0
+      finishReturn()
+    }, reduced ? 48 : 1400)
+  }
+
   const go = (next: Screen) => {
-    if (introLockedRef.current || lockRef.current || screenRef.current === next || openRef.current) return
+    if (introLockedRef.current || lockRef.current || openRef.current) return
+    if (next === 'hero') {
+      goToHero()
+      return
+    }
+    if (screenRef.current === next) return
+    const scroller = scrollerRef.current
+    const featured = document.getElementById('featured')
     lockRef.current = true
     setSettled(false)
+    setReturning(false)
     setScreen(next)
     const reduced = prefersReducedMotion()
-    if (next === 'projects' && !reduced) {
-      setReturning(false)
+    if (!reduced) {
       setPunch(true)
       window.clearTimeout(punchTimer.current)
       punchTimer.current = window.setTimeout(() => setPunch(false), 900)
     }
-    if (next === 'hero' && !reduced) {
-      setReturning(true)
-      window.clearTimeout(returnTimer.current)
-      returnTimer.current = window.setTimeout(() => setReturning(false), 1650)
+    if (!scroller || !featured) {
+      lockRef.current = false
+      setSettled(true)
+      return
     }
-    window.setTimeout(
-      () => {
-        lockRef.current = false
-        setSettled(true)
-      },
-      reduced ? 0 : next === 'hero' ? 1720 : 980,
-    )
+    const start = scroller.scrollTop
+    const end = featured.offsetTop
+    if (reduced || Math.abs(end - start) < 2) {
+      scroller.scrollTop = end
+      lockRef.current = false
+      setSettled(true)
+      return
+    }
+    scroller.classList.add('is-direct')
+    const t0 = performance.now()
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - t0) / 1050)
+      const eased = anchorEase(progress)
+      scroller.scrollTop = start + (end - start) * eased
+      if (progress < 1) {
+        window.requestAnimationFrame(tick)
+        return
+      }
+      scroller.scrollTop = end
+      scroller.classList.remove('is-direct')
+      lockRef.current = false
+      setSettled(true)
+    }
+    window.requestAnimationFrame(tick)
   }
 
   const openWork = (work: Work, nextOrigin?: WorkOrigin) => {
@@ -142,8 +226,8 @@ export default function App() {
       <Grain />
       <Cursor />
       <Navbar />
-      <main className={`deck${screen === 'projects' ? ' is-projects' : ''}${punch ? ' is-punch' : ''}${returning ? ' is-return' : ''}`} data-screen={screen}>
-        <div className="deck-view">
+      <main className={`deck${screen === 'projects' ? ' is-projects' : ''}${punch ? ' is-punch' : ''}`} data-screen={screen}>
+        <div ref={scrollerRef} className="deck-view">
         <Hero
           active={screen === 'hero'}
           locked={introLocked}

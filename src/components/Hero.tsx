@@ -141,6 +141,7 @@ export function Hero({
 
   return (
     <section
+      id="hero"
       ref={hostRef}
       className={`hero${locked ? ' is-locked' : ''}`}
       aria-label="Showcase"
