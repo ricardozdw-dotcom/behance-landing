@@ -36,9 +36,11 @@ export function Cursor() {
       x = event.clientX
       y = event.clientY
       visible = true
-      hot =
-        event.target instanceof Element &&
-        Boolean(event.target.closest('[data-cursor], [data-tile-hot], a, button'))
+      const el = event.target instanceof Element ? event.target : null
+      // Waterfall project cards stay on the default disc. The blue ring is for
+      // links and buttons that are not those cards.
+      const onCard = Boolean(el?.closest('.fall-card'))
+      hot = Boolean(el && !onCard && el.closest('[data-cursor], [data-tile-hot], a, button'))
       targetScale = hot ? 1.36 : 1
       targetDotScale = hot ? 1.18 : 1
       frame.classList.toggle('is-hot', hot)

@@ -378,7 +378,6 @@ export function Projects({
                 data-fw-card=""
                 data-fw-depth={depthUrl(work.id)}
                 data-fw-color={workColor(work)}
-                data-cursor=""
                 onClick={(event) => {
                   if (drag.current.suppress) return
                   const frame = event.currentTarget.querySelector('.fall-frame')
