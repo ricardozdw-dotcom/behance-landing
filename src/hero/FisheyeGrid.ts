@@ -30,7 +30,11 @@ type Cell = {
 type TileSlot = {
   texture: THREE.Texture
   blur: number
-  state: 'idle' | 'loading' | 'live'
+  /** empty until a blurred thumb or the full cover is on the mesh */
+  state: 'empty' | 'preview' | 'live'
+  full: 'idle' | 'loading' | 'live'
+  previewTries: number
+  fullTries: number
 }
 
 type ShaderLike = {
@@ -245,7 +249,10 @@ export class FisheyeGrid {
     this.slots = this.tiles.map(() => ({
       texture: this.placeholder!,
       blur: 1,
-      state: 'idle' as const,
+      state: 'empty' as const,
+      full: 'idle' as const,
+      previewTries: 0,
+      fullTries: 0,
     }))
     this.resize()
     this.host.addEventListener('pointerdown', this.onPointerDown)
@@ -257,8 +264,10 @@ export class FisheyeGrid {
     this.observer.observe(this.host)
     this.intersection.observe(this.host)
     this.start()
+    const previews = Promise.all(this.tiles.map((_, index) => this.loadPreview(index)))
     const initial = this.initialIndices()
-    await Promise.all(initial.map((index) => this.loadSlot(index)))
+    await Promise.all(initial.map((index) => this.loadFull(index)))
+    await previews
     if (this.disposed) return
     this.booted = true
     this.viewStamp = `${Math.floor(this.panX / PITCH)}:${Math.floor(this.panY / PITCH)}`
@@ -331,10 +340,17 @@ export class FisheyeGrid {
   private syncDemand() {
     if (!this.booted) return
     const stamp = `${Math.floor(this.panX / PITCH)}:${Math.floor(this.panY / PITCH)}`
-    if (stamp === this.viewStamp) return
-    this.viewStamp = stamp
-    for (const index of this.indicesInView(HERO_LOAD_AHEAD)) this.enqueue(index)
-    this.pump()
+    const moved = stamp !== this.viewStamp
+    if (moved) this.viewStamp = stamp
+    let queued = false
+    for (const index of this.indicesInView(0.2)) {
+      const slot = this.slots[index]
+      if (slot && slot.state === 'empty') queued = this.enqueue(index) || queued
+    }
+    if (moved) {
+      for (const index of this.indicesInView(HERO_LOAD_AHEAD)) queued = this.enqueue(index) || queued
+    }
+    if (queued) this.pump()
   }
 
   private primeRestingDemand() {
@@ -348,9 +364,10 @@ export class FisheyeGrid {
 
   private enqueue(index: number) {
     const slot = this.slots[index]
-    if (!slot || slot.state !== 'idle' || this.queued.has(index)) return
+    if (!slot || slot.full !== 'idle' || this.queued.has(index)) return false
     this.queued.add(index)
     this.queue.push(index)
+    return true
   }
 
   private pump() {
@@ -364,30 +381,73 @@ export class FisheyeGrid {
       if (index === undefined) break
       this.queued.delete(index)
       const slot = this.slots[index]
-      if (!slot || slot.state !== 'idle') continue
+      if (!slot || slot.full !== 'idle') continue
       this.activeLoads += 1
-      void this.loadSlot(index).finally(() => {
+      void this.loadFull(index).finally(() => {
         this.activeLoads -= 1
         this.pump()
       })
     }
   }
 
-  private loadSlot(index: number) {
+  private async loadPreview(index: number) {
     const slot = this.slots[index]
     const work = this.tiles[index]
-    if (!slot || !work || slot.state !== 'idle') return Promise.resolve()
-    slot.state = 'loading'
-    return this.makeTexture(work, index).then((texture) => {
+    if (!slot || !work?.image || slot.state !== 'empty') return
+    const image = await loadImage(thumbUrl(work.image), 8000)
+    if (this.disposed || slot.state !== 'empty') return
+    if (!image) {
+      slot.previewTries += 1
+      if (slot.previewTries < 4) {
+        window.setTimeout(() => void this.loadPreview(index), 350 * slot.previewTries)
+      }
+      return
+    }
+    const texture = this.textureFromImage(image)
+    this.renderer.initTexture(texture)
+    if (this.disposed || slot.state !== 'empty') {
+      texture.dispose()
+      return
+    }
+    slot.texture = texture
+    slot.state = 'preview'
+    slot.blur = 1
+    this.owned.add(texture)
+  }
+
+  private loadFull(index: number) {
+    const slot = this.slots[index]
+    const work = this.tiles[index]
+    if (!slot || !work || slot.full !== 'idle') return Promise.resolve()
+    slot.full = 'loading'
+    return this.makeTexture(work).then((texture) => {
       if (this.disposed) {
-        texture.dispose()
+        texture?.dispose()
+        return
+      }
+      if (!texture) {
+        slot.full = 'idle'
+        slot.fullTries += 1
+        if (slot.fullTries < 4) {
+          window.setTimeout(() => {
+            if (this.disposed) return
+            this.enqueue(index)
+            this.pump()
+          }, 450 * slot.fullTries)
+        }
         return
       }
       this.renderer.initTexture(texture)
+      const previous = slot.texture
       slot.texture = texture
       slot.state = 'live'
+      slot.full = 'live'
       slot.blur = this.reduced ? 0 : 1
       this.owned.add(texture)
+      if (previous && previous !== this.placeholder && previous !== texture) {
+        previous.dispose()
+        this.owned.delete(previous)
+      }
     })
   }
 
@@ -530,6 +590,7 @@ export class FisheyeGrid {
     if (!this.reduced && this.presented) {
       for (const slot of this.slots) {
         if (slot.state === 'live' && slot.blur > 0) slot.blur = Math.max(0, slot.blur - dt * 1.45)
+        else if (slot.state === 'preview') slot.blur = 1
       }
     }
     const follow = this.dragging ? 0 : 1
@@ -813,12 +874,12 @@ export class FisheyeGrid {
 
   private paintCell(cell: Cell) {
     const slot = this.slots[cell.index]
-    const live = slot?.state === 'live'
-    cell.mesh.visible = Boolean(live)
-    if (!live || !slot) return
+    const show = slot?.state === 'preview' || slot?.state === 'live'
+    cell.mesh.visible = Boolean(show)
+    if (!show || !slot) return
     if (cell.material.map !== slot.texture) cell.material.map = slot.texture
     const blur = cell.material.userData.blur as { value: number } | undefined
-    if (blur) blur.value = slot.blur
+    if (blur) blur.value = slot.state === 'live' ? slot.blur : 1
   }
 
   private layout() {
@@ -866,12 +927,12 @@ export class FisheyeGrid {
     this.syncDemand()
   }
 
-  private async makeTexture(work: Work, index: number) {
+  private async makeTexture(work: Work) {
     const canvas = document.createElement('canvas')
     canvas.width = TILE_SIZE
     canvas.height = TILE_SIZE
     const ctx = canvas.getContext('2d')
-    if (!ctx) return this.asTexture(canvas)
+    if (!ctx) return null
 
     if (work.poster) {
       const poster = renderPoster(work.poster, TILE_SIZE)
@@ -879,15 +940,22 @@ export class FisheyeGrid {
       return this.asTexture(canvas)
     }
 
-    const image = work.image ? await loadImage(work.image) : null
-    if (this.disposed) return this.asTexture(canvas)
-    if (image) {
-      drawCover(ctx, image, TILE_SIZE)
-      drawCaption(ctx, TILE_SIZE, work.client, work.year)
-    } else {
-      drawPlate(ctx, TILE_SIZE, work.title, index)
-    }
+    if (!work.image) return null
+    const image = await loadImage(work.image, 15000)
+    if (this.disposed || !image) return null
+    drawCover(ctx, image, TILE_SIZE)
+    drawCaption(ctx, TILE_SIZE, work.client, work.year)
     return this.asTexture(canvas)
+  }
+
+  private textureFromImage(image: HTMLImageElement) {
+    const texture = new THREE.Texture(image)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.minFilter = THREE.LinearFilter
+    texture.magFilter = THREE.LinearFilter
+    texture.generateMipmaps = false
+    texture.needsUpdate = true
+    return texture
   }
 
   private lensStrength() {
@@ -1110,11 +1178,27 @@ function invertBarrel(sx: number, sy: number, k: number) {
   return { x, y }
 }
 
-function loadImage(src: string) {
+function thumbUrl(src: string) {
+  return src.replace('/covers/behance/', '/covers/behance/thumbs/')
+}
+
+function loadImage(src: string, timeoutMs = 12000) {
   return new Promise<HTMLImageElement | null>((resolve) => {
     const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => resolve(null)
+    image.decoding = 'async'
+    const timer = window.setTimeout(() => {
+      image.onload = null
+      image.onerror = null
+      resolve(null)
+    }, timeoutMs)
+    image.onload = () => {
+      window.clearTimeout(timer)
+      resolve(image)
+    }
+    image.onerror = () => {
+      window.clearTimeout(timer)
+      resolve(null)
+    }
     image.src = src
   })
 }
@@ -1142,13 +1226,3 @@ function drawCaption(ctx: CanvasRenderingContext2D, size: number, client: string
   ctx.fillText(year, size * 0.045, size * 0.945)
 }
 
-function drawPlate(ctx: CanvasRenderingContext2D, size: number, title: string, index: number) {
-  const hues = ['#161616', '#1a1412', '#12161a', '#18140f']
-  ctx.fillStyle = hues[index % hues.length] ?? '#161616'
-  ctx.fillRect(0, 0, size, size)
-  ctx.fillStyle = 'rgba(243,240,232,0.8)'
-  ctx.font = `${Math.round(size * 0.055)}px "Instrument Serif", serif`
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(title, size * 0.08, size * 0.5)
-}
