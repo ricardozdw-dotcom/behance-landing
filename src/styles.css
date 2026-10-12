@@ -286,15 +286,15 @@ html.has-cursor * {
 }
 
 .deck.is-punch {
-  animation: deck-punch 0.9s cubic-bezier(0.16, 0.84, 0.2, 1) both;
+  animation: deck-punch 1s cubic-bezier(0.33, 0.08, 0.22, 1) both;
 }
 
 @keyframes deck-punch {
   0% {
-    transform: scale(1.08);
+    transform: scale(1);
   }
-  22% {
-    transform: scale(1.22);
+  42% {
+    transform: scale(1.07);
   }
   100% {
     transform: scale(1);
@@ -533,19 +533,19 @@ html.has-cursor * {
 }
 
 .deck.is-punch .deck-veil {
-  animation: punch-veil 0.72s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: punch-veil 1s cubic-bezier(0.33, 0.08, 0.22, 1);
 }
 
 @keyframes punch-veil {
   0% {
     opacity: 0;
-    transform: scale(1.06);
-    filter: blur(8px);
-  }
-  22% {
-    opacity: 0.28;
-    transform: scale(1.02);
+    transform: scale(1.03);
     filter: blur(4px);
+  }
+  42% {
+    opacity: 0.14;
+    transform: scale(1.01);
+    filter: blur(2px);
   }
   100% {
     opacity: 0;
@@ -555,16 +555,14 @@ html.has-cursor * {
 }
 
 .deck.is-punch .fall-card.is-in {
-  animation: punch-card 0.62s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: punch-card 0.7s cubic-bezier(0.33, 0.08, 0.22, 1) both;
 }
 
 @keyframes punch-card {
   0% {
-    opacity: 0;
-    filter: blur(6px);
+    filter: blur(2px);
   }
   100% {
-    opacity: 1;
     filter: blur(0);
   }
 }

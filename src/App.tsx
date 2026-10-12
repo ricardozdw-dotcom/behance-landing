@@ -11,11 +11,7 @@ import { prefersReducedMotion } from './lib/math'
 
 type Screen = 'hero' | 'projects'
 
-function anchorEase(progress: number) {
-  const x1 = 0.77
-  const y1 = 0
-  const x2 = 0.18
-  const y2 = 1
+function bezierEase(x1: number, y1: number, x2: number, y2: number, progress: number) {
   const cx = 3 * x1
   const bx = 3 * (x2 - x1) - cx
   const ax = 1 - cx - bx
@@ -31,6 +27,14 @@ function anchorEase(progress: number) {
     t = Math.min(1, Math.max(0, t - (sampleX(t) - progress) / slope))
   }
   return sampleY(t)
+}
+
+function easeIntoHero(progress: number) {
+  return bezierEase(0.55, 0, 1, 1, progress)
+}
+
+function easeIntoFeatured(progress: number) {
+  return bezierEase(0.4, 0, 0.2, 1, progress)
 }
 
 export default function App() {
@@ -93,8 +97,8 @@ export default function App() {
     scroller.classList.add('is-direct')
     const t0 = performance.now()
     const tick = (now: number) => {
-      const progress = Math.min(1, (now - t0) / 780)
-      const eased = 1 - (1 - progress) ** 3
+      const progress = Math.min(1, (now - t0) / 1040)
+      const eased = easeIntoHero(progress)
       scroller.scrollTop = start + (end - start) * eased
       if (progress < 1) {
         window.requestAnimationFrame(tick)
@@ -123,7 +127,7 @@ export default function App() {
     if (!reduced) {
       setPunch(true)
       window.clearTimeout(punchTimer.current)
-      punchTimer.current = window.setTimeout(() => setPunch(false), 900)
+      punchTimer.current = window.setTimeout(() => setPunch(false), 1000)
     }
     if (!scroller || !featured) {
       lockRef.current = false
@@ -141,8 +145,8 @@ export default function App() {
     scroller.classList.add('is-direct')
     const t0 = performance.now()
     const tick = (now: number) => {
-      const progress = Math.min(1, (now - t0) / 1050)
-      const eased = anchorEase(progress)
+      const progress = Math.min(1, (now - t0) / 1000)
+      const eased = easeIntoFeatured(progress)
       scroller.scrollTop = start + (end - start) * eased
       if (progress < 1) {
         window.requestAnimationFrame(tick)
