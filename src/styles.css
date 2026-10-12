@@ -506,7 +506,7 @@ html.has-cursor * {
 
 .deck.is-return {
   transform-origin: 50% 42%;
-  animation: deck-return 1.42s cubic-bezier(0.4, 0.05, 0.2, 1) both;
+  animation: deck-return 1.65s cubic-bezier(0.2, 0.05, 0.55, 0.85) both;
 }
 
 .deck.is-return .hero,
@@ -515,12 +515,12 @@ html.has-cursor * {
 }
 
 .deck.is-return .hero {
-  animation: return-hero 1.42s cubic-bezier(0.4, 0.05, 0.2, 1) both;
+  animation: return-hero 1.65s cubic-bezier(0.2, 0.05, 0.55, 0.85) both;
 }
 
 .deck.is-return .projects {
   transform-origin: 50% 0%;
-  animation: return-projects 1.42s cubic-bezier(0.4, 0.05, 0.2, 1) both;
+  animation: return-projects 1.65s cubic-bezier(0.2, 0.05, 0.55, 0.85) both;
 }
 
 @keyframes deck-return {
@@ -541,9 +541,9 @@ html.has-cursor * {
     filter: blur(0);
     opacity: 1;
   }
-  22% {
-    filter: blur(8px);
-    opacity: 0.9;
+  42% {
+    filter: blur(7px);
+    opacity: 0.92;
   }
   100% {
     transform: translate3d(0, 0, 0);
@@ -558,9 +558,9 @@ html.has-cursor * {
     opacity: 1;
     filter: blur(0);
   }
-  55% {
-    filter: blur(12px);
-    opacity: 0.72;
+  48% {
+    filter: blur(10px);
+    opacity: 0.8;
   }
   100% {
     transform: translate3d(0, 100%, 0);
@@ -590,7 +590,7 @@ html.has-cursor * {
 }
 
 .deck.is-return .deck-veil {
-  animation: return-veil 1.42s cubic-bezier(0.4, 0.05, 0.2, 1) both;
+  animation: return-veil 1.65s cubic-bezier(0.2, 0.05, 0.55, 0.85) both;
 }
 
 @keyframes punch-veil {
@@ -617,8 +617,8 @@ html.has-cursor * {
     transform: scale(1.05);
     filter: blur(12px);
   }
-  36% {
-    opacity: 0.2;
+  46% {
+    opacity: 0.16;
     transform: scale(1.02);
     filter: blur(6px);
   }

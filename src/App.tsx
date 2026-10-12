@@ -56,14 +56,14 @@ export default function App() {
     if (next === 'hero' && !reduced) {
       setReturning(true)
       window.clearTimeout(returnTimer.current)
-      returnTimer.current = window.setTimeout(() => setReturning(false), 1420)
+      returnTimer.current = window.setTimeout(() => setReturning(false), 1650)
     }
     window.setTimeout(
       () => {
         lockRef.current = false
         setSettled(true)
       },
-      reduced ? 0 : next === 'hero' ? 1500 : 980,
+      reduced ? 0 : next === 'hero' ? 1720 : 980,
     )
   }
 
