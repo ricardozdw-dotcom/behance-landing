@@ -176,7 +176,9 @@ export class FisheyeGrid {
       powerPreference: 'high-performance',
     })
     renderer.outputColorSpace = THREE.SRGBColorSpace
-    const field = new THREE.Color(0x1a1e24)
+    // The fluid pass writes this clear in linear light, so a dark hex would
+    // land near black. 0xe4e8ed displays as the soft field #c5ced8.
+    const field = new THREE.Color(0xe4e8ed)
     renderer.setClearColor(field, 1)
     this.scene.background = field
     renderer.clear()
