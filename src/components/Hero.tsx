@@ -80,8 +80,6 @@ export function Hero({
     gridRef.current?.setInputEnabled(!locked)
   }, [locked, ready])
 
-  const wasActiveRef = useRef(true)
-
   useEffect(() => {
     if (assembledRef.current || !ready) return
     // Stay scattered until the intro veil is essentially gone. Starting at
@@ -94,20 +92,6 @@ export function Hero({
     grid.reveal()
     grid.beginAssemble()
   }, [ready, reveal, locked])
-
-  useEffect(() => {
-    if (!active || !ready || reveal < 0.5) {
-      wasActiveRef.current = active
-      return
-    }
-    if (!wasActiveRef.current) {
-      wasActiveRef.current = true
-      const grid = gridRef.current
-      if (!grid) return
-      const id = window.setTimeout(() => grid.reassemble(), prefersReducedMotion() ? 0 : 780)
-      return () => window.clearTimeout(id)
-    }
-  }, [active, ready, reveal])
 
   useEffect(() => {
     const host = hostRef.current

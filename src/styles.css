@@ -538,17 +538,9 @@ html.has-cursor * {
 @keyframes return-hero {
   0% {
     transform: translate3d(0, -100%, 0);
-    filter: blur(0);
-    opacity: 1;
-  }
-  42% {
-    filter: blur(7px);
-    opacity: 0.92;
   }
   100% {
     transform: translate3d(0, 0, 0);
-    filter: blur(0);
-    opacity: 1;
   }
 }
 
@@ -556,16 +548,10 @@ html.has-cursor * {
   0% {
     transform: translate3d(0, 0, 0);
     opacity: 1;
-    filter: blur(0);
-  }
-  48% {
-    filter: blur(10px);
-    opacity: 0.8;
   }
   100% {
     transform: translate3d(0, 100%, 0);
-    opacity: 0;
-    filter: blur(0);
+    opacity: 1;
   }
 }
 
@@ -589,10 +575,6 @@ html.has-cursor * {
   animation: punch-veil 0.72s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.deck.is-return .deck-veil {
-  animation: return-veil 1.65s cubic-bezier(0.2, 0.05, 0.55, 0.85) both;
-}
-
 @keyframes punch-veil {
   0% {
     opacity: 0;
@@ -608,24 +590,6 @@ html.has-cursor * {
     opacity: 0;
     transform: scale(1);
     filter: blur(0px);
-  }
-}
-
-@keyframes return-veil {
-  0% {
-    opacity: 0;
-    transform: scale(1.05);
-    filter: blur(12px);
-  }
-  46% {
-    opacity: 0.16;
-    transform: scale(1.02);
-    filter: blur(6px);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1);
-    filter: blur(0);
   }
 }
 
@@ -1798,8 +1762,7 @@ html.has-cursor * {
   .deck.is-punch .fall-card.is-in,
   .deck.is-return,
   .deck.is-return .hero,
-  .deck.is-return .projects,
-  .deck.is-return .deck-veil {
+  .deck.is-return .projects {
     animation: none;
   }
 }

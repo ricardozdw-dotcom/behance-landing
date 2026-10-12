@@ -153,7 +153,7 @@ export default function App() {
           onFirstFrame={() => resolveHeroReady.current?.()}
         />
         <Projects
-          active={screen === 'projects'}
+          active={screen === 'projects' || returning}
           interactive={interactive}
           overlayOpen={open}
           onSelect={openWork}
