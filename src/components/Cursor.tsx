@@ -24,6 +24,8 @@ export function Cursor() {
     let ry = y
     let scale = 1
     let targetScale = 1
+    let dotScale = 1
+    let targetDotScale = 1
     let visible = false
     let hot = false
     let raf = 0
@@ -37,7 +39,8 @@ export function Cursor() {
       hot =
         event.target instanceof Element &&
         Boolean(event.target.closest('[data-cursor], [data-tile-hot], a, button'))
-      targetScale = hot ? 1.22 : 1
+      targetScale = hot ? 1.36 : 1
+      targetDotScale = hot ? 1.18 : 1
       frame.classList.toggle('is-hot', hot)
     }
 
@@ -45,6 +48,7 @@ export function Cursor() {
       visible = false
       hot = false
       targetScale = 1
+      targetDotScale = 1
       frame.classList.remove('is-hot')
     }
 
@@ -55,16 +59,18 @@ export function Cursor() {
     const tick = () => {
       if (!running) return
       const dotK = 1
-      const ringK = reduced ? 1 : 0.85
+      const ringK = reduced ? 1 : 0.22
       dx += (x - dx) * dotK
       dy += (y - dy) * dotK
       rx += (x - rx) * ringK
       ry += (y - ry) * ringK
-      scale += (targetScale - scale) * (reduced ? 1 : 0.42)
+      const ease = reduced ? 1 : 0.28
+      scale += (targetScale - scale) * ease
+      dotScale += (targetDotScale - dotScale) * ease
       const alpha = visible ? '1' : '0'
       dot.style.opacity = alpha
       ring.style.opacity = alpha
-      dot.style.transform = `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0) translate(-50%, -50%)`
+      dot.style.transform = `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0) translate(-50%, -50%) scale(${dotScale.toFixed(3)})`
       ring.style.transform = `translate3d(${rx.toFixed(2)}px, ${ry.toFixed(2)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`
       raf = window.requestAnimationFrame(tick)
     }

@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+
+const CLOSE_MS = 840
 import type { Work } from '../data/works'
 import { workBlurb } from '../data/works'
 import { prefersReducedMotion } from '../lib/math'
@@ -21,6 +23,7 @@ export function ProjectOverlay({
   const panelRef = useRef<HTMLDivElement>(null)
   const [coveredId, setCoveredId] = useState<string | null>(null)
   const coverReady = Boolean(open && work && coveredId === work.id)
+  const closing = Boolean(!open && work && coveredId === work.id)
 
   useEffect(() => {
     if (!open) return
@@ -53,10 +56,7 @@ export function ProjectOverlay({
   }, [work, origin])
 
   useLayoutEffect(() => {
-    if (!open || !work) {
-      setCoveredId((current) => (current === null ? current : null))
-      return
-    }
+    if (!open || !work) return
     const root = rootRef.current
     const img = root?.querySelector('img')
     if (!img) return
@@ -99,6 +99,74 @@ export function ProjectOverlay({
     panel.style.transform = ''
   }, [coverReady])
 
+  useLayoutEffect(() => {
+    if (!closing || prefersReducedMotion()) return
+    const root = rootRef.current
+    const panel = panelRef.current
+    if (!root || !panel) return
+
+    const sx = root.style.getPropertyValue('--suck-x') || '0px'
+    const sy = root.style.getPropertyValue('--suck-y') || '24px'
+    const ss = root.style.getPropertyValue('--suck-s') || '0.18'
+    const suck = `translate3d(${sx}, ${sy}, 0) scale(${ss})`
+    const img = root.querySelector('img')
+    const copy = root.querySelectorAll(
+      '.overlay-word, .overlay-copy .kicker, .overlay-copy .overlay-sub, .overlay-copy .overlay-body, .overlay-copy .overlay-client, .overlay-copy .blue-bar, .overlay-close',
+    )
+
+    root.style.transition = 'none'
+    panel.style.transition = 'none'
+    root.style.opacity = '1'
+    root.style.visibility = 'visible'
+    panel.style.transform = 'none'
+    if (img instanceof HTMLElement) {
+      img.style.animation = 'none'
+      img.style.transition = 'none'
+      img.style.filter = 'none'
+    }
+
+    const ease = 'cubic-bezier(0.22, 0.9, 0.2, 1)'
+    const anims: Animation[] = [
+      root.animate([{ opacity: 1 }, { opacity: 0 }], {
+        duration: CLOSE_MS,
+        easing: 'cubic-bezier(0.4, 0, 0.18, 1)',
+        fill: 'forwards',
+      }),
+      panel.animate(
+        [
+          { transform: 'translate3d(0px, 0px, 0) scale(1)' },
+          { transform: suck },
+        ],
+        { duration: CLOSE_MS, easing: ease, fill: 'forwards' },
+      ),
+    ]
+    if (img instanceof HTMLElement) {
+      anims.push(
+        img.animate([{ filter: 'blur(0px)' }, { filter: 'blur(18px)' }], {
+          duration: 620,
+          easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+          fill: 'forwards',
+        }),
+      )
+    }
+    copy.forEach((node) => {
+      if (!(node instanceof HTMLElement)) return
+      anims.push(
+        node.animate(
+          [
+            { opacity: 1, filter: 'blur(0px)' },
+            { opacity: 0, filter: 'blur(8px)' },
+          ],
+          { duration: 260, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' },
+        ),
+      )
+    })
+
+    return () => {
+      for (const anim of anims) anim.cancel()
+    }
+  }, [closing])
+
   if (!work) return null
 
   const words = work.title.split(/\s+/).filter(Boolean)
@@ -106,7 +174,7 @@ export function ProjectOverlay({
   return (
     <div
       ref={rootRef}
-      className={`overlay${open ? ' is-open' : ''}${coverReady ? ' is-cover' : ''}`}
+      className={`overlay${open ? ' is-open' : ''}${coverReady ? ' is-cover' : ''}${!open && closing ? ' is-closing' : ''}`}
       role="presentation"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
@@ -148,5 +216,5 @@ export function ProjectOverlay({
 }
 
 export function overlayDuration() {
-  return prefersReducedMotion() ? 0 : 700
+  return prefersReducedMotion() ? 0 : CLOSE_MS + 90
 }

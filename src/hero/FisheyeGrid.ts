@@ -66,6 +66,9 @@ export class FisheyeGrid {
   private placeholder: THREE.Texture | null = null
   private slots: TileSlot[] = []
   private readonly owned = new Set<THREE.Texture>()
+  private readonly plates = new Set<THREE.Texture>()
+  /** Blur stays parked until the intro has uncovered the grid. */
+  private presented = false
   private readonly queue: number[] = []
   private readonly queued = new Set<number>()
   private activeLoads = 0
@@ -169,11 +172,14 @@ export class FisheyeGrid {
     const renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
-      alpha: false,
+      alpha: true,
       powerPreference: 'high-performance',
     })
     renderer.outputColorSpace = THREE.SRGBColorSpace
-    renderer.setClearColor(0x050505, 1)
+    const field = new THREE.Color(0x1a1e24)
+    renderer.setClearColor(field, 1)
+    this.scene.background = field
+    renderer.clear()
     this.renderer = renderer
 
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20)
@@ -239,11 +245,11 @@ export class FisheyeGrid {
   async init() {
     await ensurePosterFonts()
     if (this.disposed) return
-    this.placeholder = this.makePlaceholder()
-    this.slots = this.tiles.map(() => ({
-      texture: this.placeholder!,
+    this.placeholder = this.makeSoftPlate(0)
+    this.slots = this.tiles.map((_, index) => ({
+      texture: this.makeSoftPlate(index + 1),
       blur: 1,
-      state: 'idle',
+      state: 'idle' as const,
     }))
     this.resize()
     this.host.addEventListener('pointerdown', this.onPointerDown)
@@ -381,6 +387,7 @@ export class FisheyeGrid {
         texture.dispose()
         return
       }
+      this.renderer.initTexture(texture)
       slot.texture = texture
       slot.state = 'live'
       slot.blur = this.reduced ? 0 : 1
@@ -388,22 +395,44 @@ export class FisheyeGrid {
     })
   }
 
-  private makePlaceholder() {
+  private makeSoftPlate(seed: number) {
     const canvas = document.createElement('canvas')
-    canvas.width = 8
-    canvas.height = 8
+    canvas.width = 64
+    canvas.height = 64
     const ctx = canvas.getContext('2d')
     if (ctx) {
-      const wash = ctx.createRadialGradient(4, 4, 0, 4, 4, 6)
-      wash.addColorStop(0, '#2a2d33')
-      wash.addColorStop(1, '#101114')
+      const plates = [
+        ['#d5cfc4', '#9eb0c4'],
+        ['#c5d0da', '#e4d5c4'],
+        ['#d8cbb8', '#a9b7c8'],
+        ['#c9d4cc', '#e7d7c6'],
+        ['#d2c6bc', '#b7c6d6'],
+        ['#e0d4c8', '#9aafc6'],
+      ]
+      const pair = plates[Math.abs(seed) % plates.length] ?? plates[0]!
+      const wash = ctx.createLinearGradient(0, 0, 64, 64)
+      wash.addColorStop(0, pair[0])
+      wash.addColorStop(1, pair[1])
       ctx.fillStyle = wash
-      ctx.fillRect(0, 0, 8, 8)
+      ctx.fillRect(0, 0, 64, 64)
+      const glow = ctx.createRadialGradient(22, 20, 2, 32, 30, 36)
+      glow.addColorStop(0, 'rgba(255, 250, 244, 0.55)')
+      glow.addColorStop(1, 'rgba(255, 250, 244, 0)')
+      ctx.fillStyle = glow
+      ctx.fillRect(0, 0, 64, 64)
+      const accent = ctx.createRadialGradient(46, 44, 1, 44, 42, 22)
+      accent.addColorStop(0, 'rgba(0, 87, 255, 0.16)')
+      accent.addColorStop(1, 'rgba(0, 87, 255, 0)')
+      ctx.fillStyle = accent
+      ctx.fillRect(0, 0, 64, 64)
     }
-    return this.asTexture(canvas)
+    const texture = this.asTexture(canvas)
+    this.plates.add(texture)
+    return texture
   }
 
   reveal() {
+    this.presented = true
     this.holdWide = false
     this.targetViewH = REST
     if (this.reduced) {
@@ -459,9 +488,24 @@ export class FisheyeGrid {
     this.target = null
     this.fluidRead = null
     this.fluidWrite = null
-    for (const texture of this.owned) texture.dispose()
+    const released = new Set<THREE.Texture>()
+    for (const texture of this.owned) {
+      texture.dispose()
+      released.add(texture)
+    }
     this.owned.clear()
-    this.placeholder?.dispose()
+    for (const slot of this.slots) {
+      if (released.has(slot.texture)) continue
+      slot.texture.dispose()
+      released.add(slot.texture)
+    }
+    for (const texture of this.plates) {
+      if (released.has(texture)) continue
+      texture.dispose()
+      released.add(texture)
+    }
+    this.plates.clear()
+    if (this.placeholder && !released.has(this.placeholder)) this.placeholder.dispose()
     this.placeholder = null
     this.slots = []
     const context = this.renderer.getContext()
@@ -517,9 +561,9 @@ export class FisheyeGrid {
       if (this.coarse && !this.reduced && this.inputEnabled) this.panX += dt * 0.028
     }
 
-    if (!this.reduced) {
+    if (!this.reduced && this.presented) {
       for (const slot of this.slots) {
-        if (slot.state === 'live' && slot.blur > 0) slot.blur = Math.max(0, slot.blur - dt * 2.15)
+        if (slot.state === 'live' && slot.blur > 0) slot.blur = Math.max(0, slot.blur - dt * 1.45)
       }
     }
     const follow = this.dragging ? 0 : 1
@@ -764,8 +808,8 @@ export class FisheyeGrid {
                  float behBlur = clamp(uBlur, 0.0, 1.0);
                  vec4 sampledDiffuseColor = texture2D(map, vMapUv);
                  if (behBlur > 0.001) {
-                   vec2 behNear = vec2(0.03) * behBlur;
-                   vec2 behFar = vec2(0.068) * behBlur;
+                   vec2 behNear = vec2(0.04) * behBlur;
+                   vec2 behFar = vec2(0.09) * behBlur;
                    vec4 behSoft = (
                      texture2D(map, vMapUv + behNear) +
                      texture2D(map, vMapUv - behNear) +
@@ -777,7 +821,9 @@ export class FisheyeGrid {
                      texture2D(map, vMapUv + vec2(-behFar.x, behFar.y))
                    ) * 0.125;
                    sampledDiffuseColor = mix(sampledDiffuseColor, behSoft, behBlur);
-                   sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, vec3(0.07, 0.074, 0.082), behBlur * 0.55);
+                   vec3 behPlate = vec3(0.835, 0.816, 0.784);
+                   float behVeil = smoothstep(0.28, 1.0, behBlur);
+                   sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, mix(behSoft.rgb, behPlate, 0.88), behVeil);
                  }
                  diffuseColor *= sampledDiffuseColor;
                #endif`,
@@ -804,10 +850,7 @@ export class FisheyeGrid {
   private paintCell(cell: Cell) {
     const slot = this.slots[cell.index]
     const next = slot?.texture ?? this.placeholder
-    if (next && cell.material.map !== next) {
-      cell.material.map = next
-      cell.material.needsUpdate = true
-    }
+    if (next && cell.material.map !== next) cell.material.map = next
     const blur = cell.material.userData.blur as { value: number } | undefined
     if (blur) blur.value = slot?.state === 'live' ? slot.blur : 1
   }
@@ -863,6 +906,8 @@ export class FisheyeGrid {
     canvas.height = TILE_SIZE
     const ctx = canvas.getContext('2d')
     if (!ctx) return this.asTexture(canvas)
+    ctx.fillStyle = '#d5cfc4'
+    ctx.fillRect(0, 0, TILE_SIZE, TILE_SIZE)
 
     if (work.poster) {
       const poster = renderPoster(work.poster, TILE_SIZE)
@@ -1134,8 +1179,8 @@ function drawCaption(ctx: CanvasRenderingContext2D, size: number, client: string
 }
 
 function drawPlate(ctx: CanvasRenderingContext2D, size: number, title: string, index: number) {
-  const hues = ['#161616', '#1a1412', '#12161a', '#18140f']
-  ctx.fillStyle = hues[index % hues.length] ?? '#161616'
+  const hues = ['#d5cfc4', '#c5d0da', '#d8cbb8', '#c9d4cc']
+  ctx.fillStyle = hues[index % hues.length] ?? '#d5cfc4'
   ctx.fillRect(0, 0, size, size)
   ctx.fillStyle = 'rgba(243,240,232,0.8)'
   ctx.font = `${Math.round(size * 0.055)}px "Instrument Serif", serif`
