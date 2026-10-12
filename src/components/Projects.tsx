@@ -266,6 +266,7 @@ export function Projects({
   }, [safePage])
 
   useEffect(() => {
+    if (!active) return
     const next = works.slice(pageStart + PAGE_SIZE, pageStart + PAGE_SIZE * 2)
     const links = next.flatMap((work) => {
       if (!work.image) return []
@@ -279,9 +280,10 @@ export function Projects({
     return () => {
       for (const link of links) link.remove()
     }
-  }, [pageStart])
+  }, [active, pageStart])
 
   useEffect(() => {
+    if (!active) return
     const root = sectionRef.current
     if (!root) return
     const work = mountFeaturedWork(root, {
@@ -307,7 +309,7 @@ export function Projects({
       work.destroy()
       featuredRef.current = null
     }
-  }, [safePage])
+  }, [active, safePage])
 
   useEffect(() => {
     if (!active) return
@@ -366,7 +368,8 @@ export function Projects({
             </p>
           </header>
           <div className="waterfall">
-            {visibleWorks.map((work, index) => (
+            {active
+              ? visibleWorks.map((work, index) => (
               <button
                 key={work.id}
                 type="button"
@@ -402,7 +405,8 @@ export function Projects({
                   </strong>
                 </span>
               </button>
-            ))}
+            ))
+              : null}
           </div>
           <nav className="fall-pager" aria-label="Featured projects pages">
             <p className="fall-pager-status">
