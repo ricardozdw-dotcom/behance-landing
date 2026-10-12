@@ -10,6 +10,9 @@ const REST = 3.72
 const PRESS = 2.86
 const DOLLY = 5.28
 const TILE_SIZE = 768
+const HERO_INITIAL = 40
+const HERO_LOAD_AHEAD = 0.8
+const HERO_LOAD_CONCURRENCY = 3
 const BARREL_FLOOR = 0.82
 const WORK_STEP_X = 9
 const WORK_STEP_Y = 13
@@ -24,9 +27,16 @@ type Cell = {
   index: number
 }
 
+type TileSlot = {
+  texture: THREE.Texture
+  blur: number
+  state: 'idle' | 'loading' | 'live'
+}
+
 type ShaderLike = {
   uniforms: Record<string, { value: unknown }>
   vertexShader: string
+  fragmentShader: string
 }
 
 /**
@@ -53,7 +63,14 @@ export class FisheyeGrid {
   private inputEnabled = true
   private firstFrameSent = false
 
-  private textures: THREE.Texture[] = []
+  private placeholder: THREE.Texture | null = null
+  private slots: TileSlot[] = []
+  private readonly owned = new Set<THREE.Texture>()
+  private readonly queue: number[] = []
+  private readonly queued = new Set<number>()
+  private activeLoads = 0
+  private booted = false
+  private viewStamp = ''
   private cells: Cell[] = []
   private cols = 0
   private rows = 0
@@ -102,6 +119,9 @@ export class FisheyeGrid {
     uTexel: { value: new THREE.Vector2(1 / 168, 1 / 96) },
     uTime: { value: 0 },
     uIdle: { value: 0 },
+    uPointer: { value: new THREE.Vector2(0.5, 0.5) },
+    uAspect: { value: 1 },
+    uContact: { value: 0 },
   }
   private readonly fluidMaterial: THREE.ShaderMaterial
   private readonly postMaterial: THREE.ShaderMaterial
@@ -202,6 +222,7 @@ export class FisheyeGrid {
     this.onPointerUp = (event) => this.pointerUp(event)
     this.onPointerLeave = () => {
       this.pointerInside = false
+      this.renderer.domElement.removeAttribute('data-tile-hot')
       if (!this.dragging) {
         this.pointerNdcX = 0
         this.pointerNdcY = 0
@@ -218,15 +239,12 @@ export class FisheyeGrid {
   async init() {
     await ensurePosterFonts()
     if (this.disposed) return
-    const total = this.tiles.length
-    const first = Math.min(20, total)
-    const placeholder = this.makePlaceholder()
-    this.textures = Array.from({ length: total }, () => placeholder)
-    const firstWave = await Promise.all(
-      this.tiles.slice(0, first).map((tile, index) => this.makeTexture(tile, index)),
-    )
-    if (this.disposed) return
-    for (let i = 0; i < firstWave.length; i += 1) this.textures[i] = firstWave[i]
+    this.placeholder = this.makePlaceholder()
+    this.slots = this.tiles.map(() => ({
+      texture: this.placeholder!,
+      blur: 1,
+      state: 'idle',
+    }))
     this.resize()
     this.host.addEventListener('pointerdown', this.onPointerDown)
     this.host.addEventListener('pointermove', this.onPointerMove)
@@ -237,6 +255,12 @@ export class FisheyeGrid {
     this.observer.observe(this.host)
     this.intersection.observe(this.host)
     this.start()
+    const initial = this.initialIndices()
+    await Promise.all(initial.map((index) => this.loadSlot(index)))
+    if (this.disposed) return
+    this.booted = true
+    this.viewStamp = `${Math.floor(this.panX / PITCH)}:${Math.floor(this.panY / PITCH)}`
+    this.primeRestingDemand()
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
         if (!this.disposed) {
@@ -247,7 +271,6 @@ export class FisheyeGrid {
         resolve()
       })
     })
-    void this.loadRest(first)
   }
 
   setInputEnabled(value: boolean) {
@@ -265,22 +288,104 @@ export class FisheyeGrid {
     this.onFirstFrame?.()
   }
 
-  private async loadRest(from: number) {
-    const batch = 8
-    for (let i = from; i < this.tiles.length && !this.disposed; i += batch) {
-      const slice = this.tiles.slice(i, i + batch)
-      const next = await Promise.all(slice.map((tile, offset) => this.makeTexture(tile, i + offset)))
-      if (this.disposed) return
-      for (let k = 0; k < next.length; k += 1) this.textures[i + k] = next[k]
-      this.refreshMaps()
+  private initialIndices() {
+    const saved = this.viewH
+    this.viewH = Math.min(saved, REST)
+    const margins = [0.4, 0.62, 0.9, 1.35, 2.2]
+    let list: number[] = []
+    for (const margin of margins) {
+      list = this.indicesInView(margin)
+      if (list.length >= 36) break
+    }
+    this.viewH = saved
+    return list.slice(0, HERO_INITIAL)
+  }
+
+  private indicesInView(marginWorld: number) {
+    if (!this.cols || !this.rows || !this.tiles.length) return []
+    const originCol = Math.floor(this.panX / PITCH) - Math.floor(this.cols / 2)
+    const originRow = Math.floor(this.panY / PITCH) - Math.floor(this.rows / 2)
+    const halfW = (this.viewH * this.aspect) / 2 + marginWorld
+    const halfH = this.viewH / 2 + marginWorld
+    const found: { index: number; dist: number }[] = []
+    const seen = new Set<number>()
+    for (let row = 0; row < this.rows; row += 1) {
+      for (let col = 0; col < this.cols; col += 1) {
+        const worldCol = originCol + col
+        const worldRow = originRow + row
+        const relX = (worldCol + 0.5) * PITCH - this.panX
+        const relY = -((worldRow + 0.5) * PITCH - this.panY)
+        if (Math.abs(relX) > halfW || Math.abs(relY) > halfH) continue
+        const index = workAt(worldCol, worldRow, this.tiles.length)
+        if (seen.has(index)) continue
+        seen.add(index)
+        found.push({ index, dist: Math.hypot(relX, relY) })
+      }
+    }
+    found.sort((a, b) => a.dist - b.dist)
+    return found.map((item) => item.index)
+  }
+
+  private syncDemand() {
+    if (!this.booted) return
+    const stamp = `${Math.floor(this.panX / PITCH)}:${Math.floor(this.panY / PITCH)}`
+    if (stamp === this.viewStamp) return
+    this.viewStamp = stamp
+    for (const index of this.indicesInView(HERO_LOAD_AHEAD)) this.enqueue(index)
+    this.pump()
+  }
+
+  private primeRestingDemand() {
+    const saved = this.viewH
+    this.viewH = Math.min(saved, REST)
+    const needed = this.indicesInView(0.45)
+    this.viewH = saved
+    for (const index of needed) this.enqueue(index)
+    this.pump()
+  }
+
+  private enqueue(index: number) {
+    const slot = this.slots[index]
+    if (!slot || slot.state !== 'idle' || this.queued.has(index)) return
+    this.queued.add(index)
+    this.queue.push(index)
+  }
+
+  private pump() {
+    if (this.disposed) return
+    if (this.queue.length > 1) {
+      const rank = new Map(this.indicesInView(2.2).map((index, order) => [index, order]))
+      this.queue.sort((a, b) => (rank.get(a) ?? 999) - (rank.get(b) ?? 999))
+    }
+    while (this.activeLoads < HERO_LOAD_CONCURRENCY && this.queue.length) {
+      const index = this.queue.shift()
+      if (index === undefined) break
+      this.queued.delete(index)
+      const slot = this.slots[index]
+      if (!slot || slot.state !== 'idle') continue
+      this.activeLoads += 1
+      void this.loadSlot(index).finally(() => {
+        this.activeLoads -= 1
+        this.pump()
+      })
     }
   }
 
-  private refreshMaps() {
-    for (const cell of this.cells) {
-      const tex = this.textures[cell.index]
-      if (tex && cell.material.map !== tex) cell.material.map = tex
-    }
+  private loadSlot(index: number) {
+    const slot = this.slots[index]
+    const work = this.tiles[index]
+    if (!slot || !work || slot.state !== 'idle') return Promise.resolve()
+    slot.state = 'loading'
+    return this.makeTexture(work, index).then((texture) => {
+      if (this.disposed) {
+        texture.dispose()
+        return
+      }
+      slot.texture = texture
+      slot.state = 'live'
+      slot.blur = this.reduced ? 0 : 1
+      this.owned.add(texture)
+    })
   }
 
   private makePlaceholder() {
@@ -289,7 +394,10 @@ export class FisheyeGrid {
     canvas.height = 8
     const ctx = canvas.getContext('2d')
     if (ctx) {
-      ctx.fillStyle = '#111111'
+      const wash = ctx.createRadialGradient(4, 4, 0, 4, 4, 6)
+      wash.addColorStop(0, '#2a2d33')
+      wash.addColorStop(1, '#101114')
+      ctx.fillStyle = wash
       ctx.fillRect(0, 0, 8, 8)
     }
     return this.asTexture(canvas)
@@ -351,8 +459,11 @@ export class FisheyeGrid {
     this.target = null
     this.fluidRead = null
     this.fluidWrite = null
-    for (const texture of this.textures) texture.dispose()
-    this.textures = []
+    for (const texture of this.owned) texture.dispose()
+    this.owned.clear()
+    this.placeholder?.dispose()
+    this.placeholder = null
+    this.slots = []
     const context = this.renderer.getContext()
     this.renderer.dispose()
     context.getExtension('WEBGL_lose_context')?.loseContext()
@@ -406,6 +517,11 @@ export class FisheyeGrid {
       if (this.coarse && !this.reduced && this.inputEnabled) this.panX += dt * 0.028
     }
 
+    if (!this.reduced) {
+      for (const slot of this.slots) {
+        if (slot.state === 'live' && slot.blur > 0) slot.blur = Math.max(0, slot.blur - dt * 2.15)
+      }
+    }
     const follow = this.dragging ? 0 : 1
     this.parX = damp(this.parX, this.pointerNdcX * this.viewH * this.aspect * 0.028 * follow, 4.2, dt)
     this.parY = damp(this.parY, -this.pointerNdcY * this.viewH * 0.028 * follow, 4.2, dt)
@@ -437,7 +553,14 @@ export class FisheyeGrid {
     return { fx, fy, active }
   }
 
+  private syncRipplePointer() {
+    this.rippleUniforms.uPointer.value.set(this.pointerUvX, this.pointerUvY)
+    this.rippleUniforms.uAspect.value = this.aspect
+    this.rippleUniforms.uContact.value = this.pointerInside && !this.reduced ? 1 : 0
+  }
+
   private advanceFluid() {
+    this.syncRipplePointer()
     const read = this.fluidRead
     const write = this.fluidWrite
     if (!read || !write || this.reduced) return
@@ -453,7 +576,7 @@ export class FisheyeGrid {
     this.fluidRead = write
     this.fluidWrite = read
     this.rippleUniforms.uFluid.value = write.texture
-    this.wake.step(this.pointerUvX, this.pointerUvY, fx, fy, active, this.aspect)
+    this.wake.step(this.pointerUvX, this.pointerUvY, fx, fy, active, this.aspect, this.pointerInside ? 1 : 0)
   }
 
   private draw() {
@@ -490,6 +613,9 @@ export class FisheyeGrid {
     this.pointerUvY = 1 - (event.clientY - rect.top) / Math.max(1, rect.height)
     this.pointerNdcX = this.pointerUvX * 2 - 1
     this.pointerNdcY = (event.clientY - rect.top) / Math.max(1, rect.height) * 2 - 1
+    const onCanvas = event.target === this.renderer.domElement
+    if (!onCanvas || !this.inputEnabled) this.renderer.domElement.removeAttribute('data-tile-hot')
+    else this.renderer.domElement.toggleAttribute('data-tile-hot', Boolean(this.pick(event.clientX, event.clientY)))
     if (!this.dragging) return
 
     const travel = Math.hypot(event.clientX - this.downX, event.clientY - this.downY)
@@ -607,16 +733,19 @@ export class FisheyeGrid {
     this.clearPool()
     this.cols = cols
     this.rows = rows
-    const fallback = this.textures[0]
+    const fallback = this.placeholder
     for (let row = 0; row < rows; row += 1) {
       for (let col = 0; col < cols; col += 1) {
         const material = new THREE.MeshBasicMaterial({
           map: fallback ?? null,
           color: 0xffffff,
         })
+        const blur = { value: 1 }
+        material.userData.blur = blur
         material.onBeforeCompile = (shader) => {
           const target = shader as unknown as ShaderLike
           target.uniforms.uStrength = this.strength
+          target.uniforms.uBlur = blur
           target.vertexShader =
             'uniform float uStrength;\n' +
             target.vertexShader.replace(
@@ -626,6 +755,32 @@ export class FisheyeGrid {
                float behR2 = dot(behNdc, behNdc);
                float behBarrel = max(0.82, 1.0 - uStrength * behR2);
                gl_Position.xy = behNdc * behBarrel * gl_Position.w;`,
+            )
+          target.fragmentShader =
+            'uniform float uBlur;\n' +
+            target.fragmentShader.replace(
+              '#include <map_fragment>',
+              `#ifdef USE_MAP
+                 float behBlur = clamp(uBlur, 0.0, 1.0);
+                 vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+                 if (behBlur > 0.001) {
+                   vec2 behNear = vec2(0.03) * behBlur;
+                   vec2 behFar = vec2(0.068) * behBlur;
+                   vec4 behSoft = (
+                     texture2D(map, vMapUv + behNear) +
+                     texture2D(map, vMapUv - behNear) +
+                     texture2D(map, vMapUv + vec2(behNear.x, -behNear.y)) +
+                     texture2D(map, vMapUv + vec2(-behNear.x, behNear.y)) +
+                     texture2D(map, vMapUv + behFar) +
+                     texture2D(map, vMapUv - behFar) +
+                     texture2D(map, vMapUv + vec2(behFar.x, -behFar.y)) +
+                     texture2D(map, vMapUv + vec2(-behFar.x, behFar.y))
+                   ) * 0.125;
+                   sampledDiffuseColor = mix(sampledDiffuseColor, behSoft, behBlur);
+                   sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, vec3(0.07, 0.074, 0.082), behBlur * 0.55);
+                 }
+                 diffuseColor *= sampledDiffuseColor;
+               #endif`,
             )
         }
         const mesh = new THREE.Mesh(this.geometry, material)
@@ -646,11 +801,22 @@ export class FisheyeGrid {
     this.rows = 0
   }
 
+  private paintCell(cell: Cell) {
+    const slot = this.slots[cell.index]
+    const next = slot?.texture ?? this.placeholder
+    if (next && cell.material.map !== next) {
+      cell.material.map = next
+      cell.material.needsUpdate = true
+    }
+    const blur = cell.material.userData.blur as { value: number } | undefined
+    if (blur) blur.value = slot?.state === 'live' ? slot.blur : 1
+  }
+
   private layout() {
-    if (!this.cells.length || !this.textures.length) return
+    if (!this.cells.length || !this.slots.length) return
     const originCol = Math.floor(this.panX / PITCH) - Math.floor(this.cols / 2)
     const originRow = Math.floor(this.panY / PITCH) - Math.floor(this.rows / 2)
-    const count = this.textures.length
+    const count = this.slots.length
     const halfW = (this.viewH * this.aspect) / 2
     const halfH = this.viewH / 2
     const gather = 1 - this.assemble
@@ -676,16 +842,19 @@ export class FisheyeGrid {
         const focus = (1 + CENTER_FOCUS * (1 - r) - CENTER_FOCUS * r) * (1 - gather * 0.1)
         cell.mesh.scale.set(focus, focus, 1)
 
-        if (cell.col === worldCol && cell.row === worldRow) continue
+        if (cell.col === worldCol && cell.row === worldRow) {
+          this.paintCell(cell)
+          continue
+        }
         cell.col = worldCol
         cell.row = worldRow
         const index = workAt(worldCol, worldRow, count)
         cell.index = index
         cell.mesh.userData.workIndex = index
-        const next = this.textures[index]
-        if (next && cell.material.map !== next) cell.material.map = next
+        this.paintCell(cell)
       }
     }
+    this.syncDemand()
   }
 
   private async makeTexture(work: Work, index: number) {
@@ -772,13 +941,13 @@ void main() {
   vec4 prev = texture2D(uPrev, vUv);
   vec2 coord = clamp(vUv - prev.xy, vec2(0.001), vec2(0.999));
   vec4 adv = texture2D(uPrev, coord);
-  vec2 vel = adv.xy * 0.999;
-  float lum = adv.z * 0.992;
+  vec2 vel = adv.xy * 0.965;
+  float lum = adv.z * 0.93;
   vec2 p = vUv - uPointer;
   p.x *= uAspect;
   float splat = exp(-dot(p, p) / uRadius) * uActive;
-  vel = clamp(vel + uForce * splat, vec2(-0.025), vec2(0.025));
-  lum = clamp(lum + splat * smoothstep(0.0004, 0.012, length(uForce)) * 0.72, 0.0, 1.0);
+  vel = clamp(vel + uForce * splat * 2.4, vec2(-0.032), vec2(0.032));
+  lum = clamp(lum + splat * smoothstep(0.00012, 0.005, length(uForce)) * 0.9, 0.0, 1.0);
   gl_FragColor = vec4(vel, lum, 1.0);
 }
 `
@@ -790,6 +959,9 @@ uniform sampler2D uFluid;
 uniform vec2 uTexel;
 uniform float uTime;
 uniform float uIdle;
+uniform vec2 uPointer;
+uniform float uAspect;
+uniform float uContact;
 
 void main() {
   vec4 fluid = texture2D(uFluid, vUv);
@@ -800,7 +972,15 @@ void main() {
   vec2 nOff = clamp(vec2(lum - lx, ly - lum) * 0.9, vec2(-0.008), vec2(0.008));
   float shimmer = sin(vUv.x * 14.0 + uTime * 0.27) * sin(vUv.y * 11.0 - uTime * 0.19);
   vec2 idle = vec2(shimmer, sin(vUv.x * 8.0 + uTime * 0.21)) * uIdle;
-  vec2 uv = clamp(vUv - (vel + nOff + idle), vec2(0.001), vec2(0.999));
+  vec2 contactP = vUv - uPointer;
+  contactP.x *= uAspect;
+  float contactDist2 = dot(contactP, contactP);
+  float contactDist = sqrt(contactDist2);
+  float contactBody = exp(-contactDist2 / 0.00135);
+  float contactCrest = exp(-pow(contactDist - 0.038, 2.0) / 0.00022);
+  vec2 contact = (contactP / max(contactDist, 0.0001)) * (contactBody * 0.011 + contactCrest * 0.007) * uContact;
+  vec2 uv = clamp(vUv - (vel + nOff + idle + contact), vec2(0.001), vec2(0.999));
+  lum = max(lum, contactBody * uContact);
   float mag = smoothstep(0.001, 0.012, length(vel));
   vec2 ca = vec2(0.0015, 0.0) * mag;
   vec3 color;
@@ -821,22 +1001,30 @@ class WakeField {
   private readonly vy = new Float32Array(WAKE_W * WAKE_H)
   private readonly nx = new Float32Array(WAKE_W * WAKE_H)
   private readonly ny = new Float32Array(WAKE_W * WAKE_H)
+  private px = 0.5
+  private py = 0.5
+  private aspect = 1
+  private hot = 0
 
-  step(uvx: number, uvy: number, fx: number, fy: number, active: number, aspect: number) {
+  step(uvx: number, uvy: number, fx: number, fy: number, active: number, aspect: number, hot = 0) {
+    this.px = uvx
+    this.py = uvy
+    this.aspect = aspect
+    this.hot = hot
     for (let y = 0; y < WAKE_H; y += 1) {
       for (let x = 0; x < WAKE_W; x += 1) {
         const index = y * WAKE_W + x
         const u = (x + 0.5) / WAKE_W
         const v = (y + 0.5) / WAKE_H
         const adv = this.bilinear(u - this.vx[index], v - this.vy[index])
-        let nvx = adv.x * 0.999
-        let nvy = adv.y * 0.999
+        let nvx = adv.x * 0.965
+        let nvy = adv.y * 0.965
         if (active) {
           const dx = (u - uvx) * aspect
           const dy = v - uvy
           const splat = Math.exp(-(dx * dx + dy * dy) / FLUID_RADIUS)
-          nvx = clamp(nvx + fx * splat, -0.025, 0.025)
-          nvy = clamp(nvy + fy * splat, -0.025, 0.025)
+          nvx = clamp(nvx + fx * splat * 2.4, -0.032, 0.032)
+          nvy = clamp(nvy + fy * splat * 2.4, -0.032, 0.032)
         }
         this.nx[index] = nvx
         this.ny[index] = nvy
@@ -848,9 +1036,10 @@ class WakeField {
 
   sample(uvx: number, uvy: number) {
     const value = this.bilinear(uvx, uvy)
+    const contact = contactShift(uvx, uvy, this.px, this.py, this.aspect, this.hot)
     return {
-      x: clamp(value.x * 1.75, -0.034, 0.034),
-      y: clamp(value.y * 1.75, -0.034, 0.034),
+      x: clamp(value.x * 1.75, -0.034, 0.034) + contact.x,
+      y: clamp(value.y * 1.75, -0.034, 0.034) + contact.y,
     }
   }
 
@@ -877,6 +1066,19 @@ class WakeField {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
+}
+
+function contactShift(uvx: number, uvy: number, px: number, py: number, aspect: number, hot: number) {
+  if (hot < 0.5) return { x: 0, y: 0 }
+  const ax = (uvx - px) * aspect
+  const ay = uvy - py
+  const dist2 = ax * ax + ay * ay
+  const dist = Math.sqrt(dist2)
+  const body = Math.exp(-dist2 / 0.00135)
+  const crest = Math.exp(-((dist - 0.038) ** 2) / 0.00022)
+  const mag = body * 0.011 + crest * 0.007
+  const len = Math.max(dist, 0.0001)
+  return { x: (ax / len) * mag, y: (ay / len) * mag }
 }
 
 function workAt(col: number, row: number, count: number) {

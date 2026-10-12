@@ -3,8 +3,9 @@ const H = 54
 const RADIUS = 0.00048
 
 /**
- * Screen-space fluid for the project reel. Velocity lingers (viscosity 0.999)
- * and is painted into an SVG displacement map plus a soft highlight.
+ * Screen-space fluid for the project reel. A short trail follows the stroke,
+ * and a contact ripple is stamped on the pointer every step so the highlight
+ * stays under the cursor instead of chasing it.
  */
 export class ProjectWake {
   private readonly vx = new Float32Array(W * H)
@@ -108,16 +109,16 @@ export class ProjectWake {
         const u = (x + 0.5) / W
         const v = (y + 0.5) / H
         const adv = this.sample(u - this.vx[index], v - this.vy[index])
-        let nvx = adv.x * 0.999
-        let nvy = adv.y * 0.999
-        let nvz = adv.z * 0.993
+        let nvx = adv.x * 0.965
+        let nvy = adv.y * 0.965
+        let nvz = adv.z * 0.93
         if (active) {
           const dx = (u - this.px) * this.aspect
           const dy = v - this.py
           const splat = Math.exp(-(dx * dx + dy * dy) / RADIUS)
-          nvx = clamp(nvx + fx * splat * 1.5, -0.04, 0.04)
-          nvy = clamp(nvy + fy * splat * 1.5, -0.04, 0.04)
-          nvz = clamp(nvz + splat * Math.min(1, Math.hypot(fx, fy) * 36), 0, 1)
+          nvx = clamp(nvx + fx * splat * 2.6, -0.05, 0.05)
+          nvy = clamp(nvy + fy * splat * 2.6, -0.05, 0.05)
+          nvz = clamp(nvz + splat * Math.min(1, Math.hypot(fx, fy) * 48), 0, 1)
         }
         this.nx[index] = nvx
         this.ny[index] = nvy
@@ -151,6 +152,7 @@ export class ProjectWake {
       data[o + 2] = 128
       data[o + 3] = 255
     }
+    this.stampContact(data)
     this.mapCtx.putImageData(image, 0, 0)
     this.image.setAttribute('href', this.map.toDataURL())
     this.frame += 1
@@ -175,6 +177,45 @@ export class ProjectWake {
     ctx.filter = 'blur(26px)'
     ctx.drawImage(this.lum, 0, 0, this.lightW, this.lightH)
     ctx.filter = 'none'
+    if (this.inside) {
+      const x = this.px * this.lightW
+      const y = this.py * this.lightH
+      const radius = Math.max(28, Math.min(this.lightW, this.lightH) * 0.07)
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, radius)
+      glow.addColorStop(0, 'rgba(236, 242, 255, 0.72)')
+      glow.addColorStop(0.45, 'rgba(190, 210, 255, 0.28)')
+      glow.addColorStop(1, 'rgba(190, 210, 255, 0)')
+      ctx.fillStyle = glow
+      ctx.beginPath()
+      ctx.arc(x, y, radius, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  private stampContact(data: Uint8ClampedArray) {
+    if (!this.inside) return
+    const radius = 11
+    const cx = this.px * (W - 1)
+    const cy = this.py * (H - 1)
+    const x0 = Math.max(0, Math.floor(cx - radius - 1))
+    const x1 = Math.min(W - 1, Math.ceil(cx + radius + 1))
+    const y0 = Math.max(0, Math.floor(cy - radius - 1))
+    const y1 = Math.min(H - 1, Math.ceil(cy + radius + 1))
+    for (let y = y0; y <= y1; y += 1) {
+      for (let x = x0; x <= x1; x += 1) {
+        const ax = ((x + 0.5) / W - this.px) * this.aspect
+        const ay = (y + 0.5) / H - this.py
+        const dist2 = ax * ax + ay * ay
+        const dist = Math.sqrt(dist2)
+        const body = Math.exp(-dist2 / 0.0016)
+        const crest = Math.exp(-((dist - 0.04) ** 2) / 0.0003)
+        const mag = body * 34 + crest * 22
+        const len = Math.max(dist, 0.0008)
+        const o = (y * W + x) * 4
+        data[o] = clamp((data[o] ?? 128) + (ax / len) * mag, 0, 255)
+        data[o + 1] = clamp((data[o + 1] ?? 128) + (ay / len) * mag, 0, 255)
+      }
+    }
   }
 
   private sample(u: number, v: number) {

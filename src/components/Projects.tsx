@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Work } from '../data/works'
 import type { WorkOrigin } from './ProjectOverlay'
 import { works } from '../data/works'
@@ -7,11 +7,29 @@ import { prefersReducedMotion } from '../lib/math'
 import { ProjectWake } from '../projects/ProjectWake'
 
 const CLICK_SLOP = 6
+const PAGE_SIZE = 12
 
 const depthUrl = (id: string) => `${import.meta.env.BASE_URL}depth/${id}.png`
 const workColor = (work: Work) => work.image ?? ''
 const workLabel = (work: Work) =>
   [work.discipline, work.client, work.year].filter(Boolean).join(' · ')
+
+function FallCover({ src }: { src: string }) {
+  const [clear, setClear] = useState(false)
+  return (
+    <img
+      ref={(node) => {
+        if (node && node.complete && node.naturalWidth > 0) setClear(true)
+      }}
+      src={src}
+      alt=""
+      decoding="async"
+      draggable={false}
+      className={clear ? 'is-clear' : ''}
+      onLoad={() => setClear(true)}
+    />
+  )
+}
 
 export function Projects({
   active,
@@ -38,6 +56,11 @@ export function Projects({
   const overlayRef = useRef(overlayOpen)
   const onBackRef = useRef(onBack)
   const onSelectRef = useRef(onSelect)
+  const [page, setPage] = useState(0)
+  const pageCount = Math.max(1, Math.ceil(works.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const pageStart = safePage * PAGE_SIZE
+  const visibleWorks = works.slice(pageStart, pageStart + PAGE_SIZE)
   const scroll = useRef({ target: 0, current: 0, velocity: 0 })
   const focusAt = useRef(0)
   if (active && focusAt.current === 0) focusAt.current = performance.now()
@@ -114,9 +137,18 @@ export function Projects({
       state.lastY = event.clientY
     }
 
+    let lastWake = 0
+    const stepWake = () => {
+      const now = performance.now()
+      if (now - lastWake < 8) return
+      lastWake = now
+      wake?.step()
+    }
+
     const trackPointer = (event: PointerEvent) => {
       const rect = viewport.getBoundingClientRect()
       wake?.pointer(event.clientX, event.clientY, rect)
+      stepWake()
     }
 
     const onPointerMove = (event: PointerEvent) => {
@@ -148,6 +180,7 @@ export function Projects({
 
     const tick = () => {
       if (!running) return
+      if (activeRef.current) stepWake()
       const state = scroll.current
       const max = maxScroll()
       state.target = Math.min(max, Math.max(0, state.target))
@@ -161,7 +194,6 @@ export function Projects({
 
       const cards = sheet.querySelectorAll<HTMLElement>('.fall-card')
       const height = Math.max(1, viewport.clientHeight)
-      if (activeRef.current) wake?.step()
       const store = para.current
       cards.forEach((card) => {
         if (reduced) {
@@ -225,6 +257,30 @@ export function Projects({
     featuredRef.current?.update()
   }, [interactive])
 
+  useLayoutEffect(() => {
+    scroll.current.target = 0
+    scroll.current.current = 0
+    scroll.current.velocity = 0
+    const sheet = sheetRef.current
+    if (sheet) sheet.style.transform = 'translate3d(0, 0, 0)'
+  }, [safePage])
+
+  useEffect(() => {
+    const next = works.slice(pageStart + PAGE_SIZE, pageStart + PAGE_SIZE * 2)
+    const links = next.flatMap((work) => {
+      if (!work.image) return []
+      const link = document.createElement('link')
+      link.rel = 'prefetch'
+      link.as = 'image'
+      link.href = work.image
+      document.head.append(link)
+      return [link]
+    })
+    return () => {
+      for (const link of links) link.remove()
+    }
+  }, [pageStart])
+
   useEffect(() => {
     const root = sectionRef.current
     if (!root) return
@@ -251,7 +307,7 @@ export function Projects({
       work.destroy()
       featuredRef.current = null
     }
-  }, [])
+  }, [safePage])
 
   useEffect(() => {
     if (!active) return
@@ -277,7 +333,7 @@ export function Projects({
     })
     for (const card of cards) observer.observe(card)
     return () => observer.disconnect()
-  }, [active])
+  }, [active, safePage])
 
   return (
     <section ref={sectionRef} className="projects" aria-label="Featured projects" aria-hidden={!active}>
@@ -310,7 +366,7 @@ export function Projects({
             </p>
           </header>
           <div className="waterfall">
-            {works.map((work, index) => (
+            {visibleWorks.map((work, index) => (
               <button
                 key={work.id}
                 type="button"
@@ -334,7 +390,7 @@ export function Projects({
               >
                 <span className="fall-frame" data-fw-visual="">
                   <span className="fall-wake">
-                    <img src={workColor(work)} alt="" decoding="async" />
+                    <FallCover src={workColor(work)} />
                   </span>
                 </span>
                 <span className="fall-meta">
@@ -348,6 +404,42 @@ export function Projects({
               </button>
             ))}
           </div>
+          <nav className="fall-pager" aria-label="Featured projects pages">
+            <p className="fall-pager-status">
+              Showing {pageStart + 1}–{pageStart + visibleWorks.length} of {works.length}
+            </p>
+            <button
+              type="button"
+              className="fall-page"
+              data-cursor=""
+              disabled={safePage === 0}
+              onClick={() => setPage((current) => Math.max(0, current - 1))}
+            >
+              Previous
+            </button>
+            {Array.from({ length: pageCount }, (_, index) => (
+              <button
+                key={index}
+                type="button"
+                className="fall-page-num"
+                data-cursor=""
+                aria-current={index === safePage ? 'page' : undefined}
+                aria-label={`Page ${index + 1}`}
+                onClick={() => setPage(index)}
+              >
+                {index + 1}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="fall-page"
+              data-cursor=""
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+            >
+              Next
+            </button>
+          </nav>
           </div>
         </div>
         <canvas ref={lightRef} className="projects-light" aria-hidden="true" />

@@ -34,8 +34,10 @@ export function Cursor() {
       x = event.clientX
       y = event.clientY
       visible = true
-      hot = event.target instanceof Element && Boolean(event.target.closest('[data-cursor]'))
-      targetScale = hot ? 1.58 : 1
+      hot =
+        event.target instanceof Element &&
+        Boolean(event.target.closest('[data-cursor], [data-tile-hot], a, button'))
+      targetScale = hot ? 1.22 : 1
       frame.classList.toggle('is-hot', hot)
     }
 
@@ -52,13 +54,13 @@ export function Cursor() {
 
     const tick = () => {
       if (!running) return
-      const dotK = reduced ? 1 : 0.42
-      const ringK = reduced ? 1 : 0.12
+      const dotK = 1
+      const ringK = reduced ? 1 : 0.85
       dx += (x - dx) * dotK
       dy += (y - dy) * dotK
       rx += (x - rx) * ringK
       ry += (y - ry) * ringK
-      scale += (targetScale - scale) * (reduced ? 1 : 0.18)
+      scale += (targetScale - scale) * (reduced ? 1 : 0.42)
       const alpha = visible ? '1' : '0'
       dot.style.opacity = alpha
       ring.style.opacity = alpha

@@ -117,6 +117,7 @@ export function mountFeaturedWork(root, options = {}) {
     titleSelector = '[data-fw-title]', labelSelector = '[data-fw-label]', headingSelector = '[data-fw-heading]',
     parallaxStrength = 1, radius = 15, entryKick = true, forceFallback = false,
     getScroll = () => window.scrollY, onIssue = () => {}, assetTimeoutMs = 12000, isHeld = () => false } = options;
+  void entryKick;
   const issue = error => { try { onIssue(error); } catch {} };
   const elements = [...root.querySelectorAll(cardSelector)];
   if (!elements.length || elements.some(element => !element.querySelector(visualSelector)?.querySelector(imageSelector))) throw new Error('Provide cards with a visual container and image before mounting.');
@@ -136,7 +137,7 @@ export function mountFeaturedWork(root, options = {}) {
     if (label) label.setAttribute('aria-label', labelText);
     const card = { element, visual, image, index, title, label, labelNodes, labelText, labelAria, entered: null, hovered: false,
       hoverAge: 0, hoverRatio: 0, dofRatio: 0, pointer: new THREE.Vector2(), kick: new THREE.Vector2(), kickTarget: new THREE.Vector2(),
-      x: new Spring(1, .6, 2), y: new Spring(1, .6, 2), zoom: new Spring(2.2, .7, 3), titleShift: 0,
+      x: new Spring(8, .92, 0), y: new Spring(8, .92, 0), zoom: new Spring(2.2, .7, 3), titleShift: 0,
       mesh: null, textures: [], loading: false, failed: false, loaded: false, oldRenderer: visual.getAttribute('data-fw-renderer'), oldClass: image.className };
     visual.classList.add('fw-visual'); image.classList.add('fw-static-image');
     const hover = value => { card.hovered = value && fine.matches && !reduced.matches; card.hoverAge = 0; wake(); };
@@ -256,17 +257,19 @@ export function mountFeaturedWork(root, options = {}) {
       const age = card.entered === null ? 0 : (now - card.entered) / 1000;
       const reveal = reduced.matches ? 1 : expoOut(age / 1.5), arrival = reduced.matches ? 1 : expoOut(age / 2);
       const hovered = card.hovered && !reduced.matches;
-      const previousHover = card.hoverRatio;
       card.hoverRatio = clamp(card.hoverRatio + (hovered ? dt : -dt)); card.hoverAge += dt;
-      if (hovered && entryKick && [0, .2, .3].some(threshold => previousHover <= threshold && card.hoverRatio > threshold)) {
-        const angle = Math.random() * Math.PI * 2;
-        card.kickTarget.set(Math.cos(angle), Math.sin(angle)).multiplyScalar(1 - clamp(card.hoverRatio / .6));
-      } else card.kickTarget.multiplyScalar(Math.exp(-3 * dt));
-      card.kick.lerp(card.kickTarget, 1 - Math.exp(-13 * dt));
-      const pulse = entryKick && hovered ? (1 - clamp(card.hoverAge / .3)) * .75 : 0;
-      const targetX = hovered ? -card.pointer.x * .5 + Math.cos(now / 1000 * 20) * pulse : 0;
-      const targetY = hovered ? -card.pointer.y * .5 + Math.sin(now / 1000 * 30) * pulse : 0;
-      card.x.step(targetX, dt); card.y.step(targetY, dt); card.zoom.step(hovered ? 1 : 0, dt);
+      // Depth parallax tracks the pointer directly. No hover kick, no slow spring
+      // chase — those read as a magnetic snap on the card.
+      card.kickTarget.set(0, 0);
+      card.kick.set(0, 0);
+      const targetX = hovered ? -card.pointer.x * .42 : 0;
+      const targetY = hovered ? -card.pointer.y * .42 : 0;
+      if (hovered) {
+        card.x.value = targetX; card.y.value = targetY; card.x.velocity = 0; card.y.velocity = 0; card.x.previous = targetX; card.y.previous = targetY;
+      } else {
+        card.x.step(0, dt); card.y.step(0, dt);
+      }
+      card.zoom.step(hovered ? 1 : 0, dt);
       card.dofRatio = clamp(card.dofRatio + (hovered ? .75 : -1) * dt);
       card.titleShift += ((hovered ? 1 : 0) - card.titleShift) * (1 - Math.exp(-8 * dt));
       if (card.mesh && onScreen && renderer && !reduced.matches && !held) {
