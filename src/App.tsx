@@ -81,14 +81,13 @@ export default function App() {
 
   useEffect(() => {
     const site = siteRef.current
-    if (site) site.style.opacity = '1'
     const intro = startIntro({
       content: site,
       heroReady: heroReady.current ?? Promise.resolve(),
       onReveal: (progress) => {
         setIntroReveal(progress)
         if (site) {
-          site.style.opacity = '1'
+          site.style.opacity = String(progress)
           site.classList.toggle('is-live', progress > 0.02)
         }
         if (progress >= 1) setIntroLocked(false)

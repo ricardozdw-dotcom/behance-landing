@@ -20,7 +20,7 @@ body,
 #root {
   margin: 0;
   height: 100%;
-  background: #c5ced8;
+  background: #000;
   color: var(--ink);
   overflow: hidden;
 }
@@ -290,7 +290,7 @@ html.has-cursor * {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #c5ced8;
+  background: var(--bg);
   user-select: none;
   touch-action: none;
   z-index: 1;
@@ -325,7 +325,6 @@ html.has-cursor * {
   height: 100%;
   display: block;
   z-index: 0;
-  background: #c5ced8;
 }
 
 .hero-fallback {
