@@ -504,6 +504,71 @@ html.has-cursor * {
   transform: translate3d(0, 0, 0);
 }
 
+.deck.is-return {
+  transform-origin: 50% 42%;
+  animation: deck-return 1.42s cubic-bezier(0.4, 0.05, 0.2, 1) both;
+}
+
+.deck.is-return .hero,
+.deck.is-return .projects {
+  transition: none;
+}
+
+.deck.is-return .hero {
+  animation: return-hero 1.42s cubic-bezier(0.4, 0.05, 0.2, 1) both;
+}
+
+.deck.is-return .projects {
+  transform-origin: 50% 0%;
+  animation: return-projects 1.42s cubic-bezier(0.4, 0.05, 0.2, 1) both;
+}
+
+@keyframes deck-return {
+  0% {
+    transform: scale(1);
+  }
+  46% {
+    transform: scale(0.986);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes return-hero {
+  0% {
+    transform: translate3d(0, -100%, 0);
+    filter: blur(0);
+    opacity: 1;
+  }
+  22% {
+    filter: blur(8px);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+@keyframes return-projects {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+    filter: blur(0);
+  }
+  55% {
+    filter: blur(12px);
+    opacity: 0.72;
+  }
+  100% {
+    transform: translate3d(0, 100%, 0);
+    opacity: 0;
+    filter: blur(0);
+  }
+}
+
 .deck-veil {
   position: absolute;
   inset: 0;
@@ -524,6 +589,10 @@ html.has-cursor * {
   animation: punch-veil 0.72s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.deck.is-return .deck-veil {
+  animation: return-veil 1.42s cubic-bezier(0.4, 0.05, 0.2, 1) both;
+}
+
 @keyframes punch-veil {
   0% {
     opacity: 0;
@@ -539,6 +608,24 @@ html.has-cursor * {
     opacity: 0;
     transform: scale(1);
     filter: blur(0px);
+  }
+}
+
+@keyframes return-veil {
+  0% {
+    opacity: 0;
+    transform: scale(1.05);
+    filter: blur(12px);
+  }
+  36% {
+    opacity: 0.2;
+    transform: scale(1.02);
+    filter: blur(6px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+    filter: blur(0);
   }
 }
 
@@ -1708,7 +1795,11 @@ html.has-cursor * {
   .deck.is-punch,
   .deck.is-punch .projects-stage,
   .deck.is-punch .deck-veil,
-  .deck.is-punch .fall-card.is-in {
+  .deck.is-punch .fall-card.is-in,
+  .deck.is-return,
+  .deck.is-return .hero,
+  .deck.is-return .projects,
+  .deck.is-return .deck-veil {
     animation: none;
   }
 }

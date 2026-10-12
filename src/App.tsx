@@ -18,6 +18,7 @@ export default function App() {
   const [origin, setOrigin] = useState<WorkOrigin | null>(null)
   const [open, setOpen] = useState(false)
   const [punch, setPunch] = useState(false)
+  const [returning, setReturning] = useState(false)
   const [introLocked, setIntroLocked] = useState(true)
   const [introReveal, setIntroReveal] = useState(0)
   const screenRef = useRef(screen)
@@ -26,6 +27,7 @@ export default function App() {
   const lockRef = useRef(false)
   const closeTimer = useRef(0)
   const punchTimer = useRef(0)
+  const returnTimer = useRef(0)
   const heroReady = useRef<Promise<void> | null>(null)
   const resolveHeroReady = useRef<(() => void) | null>(null)
   const siteRef = useRef<HTMLDivElement>(null)
@@ -44,17 +46,24 @@ export default function App() {
     lockRef.current = true
     setSettled(false)
     setScreen(next)
-    if (next === 'projects' && !prefersReducedMotion()) {
+    const reduced = prefersReducedMotion()
+    if (next === 'projects' && !reduced) {
+      setReturning(false)
       setPunch(true)
       window.clearTimeout(punchTimer.current)
       punchTimer.current = window.setTimeout(() => setPunch(false), 900)
+    }
+    if (next === 'hero' && !reduced) {
+      setReturning(true)
+      window.clearTimeout(returnTimer.current)
+      returnTimer.current = window.setTimeout(() => setReturning(false), 1420)
     }
     window.setTimeout(
       () => {
         lockRef.current = false
         setSettled(true)
       },
-      prefersReducedMotion() ? 0 : 980,
+      reduced ? 0 : next === 'hero' ? 1500 : 980,
     )
   }
 
@@ -133,7 +142,7 @@ export default function App() {
       <Grain />
       <Cursor />
       <Navbar />
-      <main className={`deck${screen === 'projects' ? ' is-projects' : ''}${punch ? ' is-punch' : ''}`} data-screen={screen}>
+      <main className={`deck${screen === 'projects' ? ' is-projects' : ''}${punch ? ' is-punch' : ''}${returning ? ' is-return' : ''}`} data-screen={screen}>
         <div className="deck-view">
         <Hero
           active={screen === 'hero'}
